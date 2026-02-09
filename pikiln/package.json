@@ -1,0 +1,16 @@
+{
+  "name": "pikiln",
+  "version": "1.0.0",
+  "description": "Raspberry Pi kiln controller with web UI and remote relay",
+  "main": "pikiln.js",
+  "scripts": {
+    "start": "node pikiln.js",
+    "sim": "PIKILN_SIMULATE=1 node pikiln.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  },
+  "optionalDependencies": {
+    "pigpio": "^3.3.1"
+  }
+}

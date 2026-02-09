@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Relay Viewer</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 20px; }
+    h1 { color: #0f94d2; margin-bottom: 16px; }
+    .status { padding: 8px 14px; border-radius: 6px; display: inline-block; margin-bottom: 16px; font-weight: 600; }
+    .status.connected { background: #16213e; color: #0f0; border: 1px solid #0f0; }
+    .status.disconnected { background: #16213e; color: #f44; border: 1px solid #f44; }
+    .status.polling { background: #16213e; color: #fa0; border: 1px solid #fa0; }
+    label { display: block; font-weight: 600; margin-bottom: 4px; color: #a0a0c0; }
+    input { width: 100%; padding: 10px; border: 1px solid #333; border-radius: 6px; background: #16213e; color: #e0e0e0; font-family: monospace; font-size: 14px; }
+    input:focus { outline: none; border-color: #0f94d2; }
+    .row { display: flex; gap: 16px; margin-bottom: 12px; align-items: end; }
+    .row > div { flex: 1; }
+    button { padding: 10px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; }
+    button.primary { background: #0f94d2; color: #fff; }
+    button.primary:hover { background: #0b7ab5; }
+    button.secondary { background: #16213e; color: #e0e0e0; border: 1px solid #444; }
+    button.secondary:hover { background: #1a2a4e; }
+    .actions { display: flex; gap: 10px; margin-bottom: 16px; }
+    #jsonDisplay { background: #0f0f23; border: 1px solid #333; border-radius: 6px; padding: 16px; min-height: 300px; overflow: auto; font-family: monospace; font-size: 14px; white-space: pre-wrap; word-break: break-word; }
+    #log { background: #0f0f23; border: 1px solid #333; border-radius: 6px; padding: 12px; height: 160px; overflow-y: auto; font-family: monospace; font-size: 13px; white-space: pre-wrap; margin-bottom: 16px; }
+    .log-entry { margin-bottom: 2px; }
+    .log-entry.error { color: #f44; }
+    .log-entry.success { color: #0f0; }
+    .log-entry.info { color: #88f; }
+    .log-entry.warn { color: #fa0; }
+    .meta { font-size: 12px; color: #888; margin-bottom: 8px; }
+    .json-key { color: #0f94d2; }
+    .json-string { color: #98c379; }
+    .json-number { color: #d19a66; }
+    .json-bool { color: #c678dd; }
+    .json-null { color: #888; }
+  </style>
+</head>
+<body>
+  <h1>Viewer Client</h1>
+  <div id="statusBadge" class="status disconnected">Disconnected</div>
+
+  <div class="row">
+    <div>
+      <label for="serverUrl">Server URL (WebSocket)</label>
+      <input id="serverUrl" value="ws://localhost:8080" />
+    </div>
+    <div>
+      <label for="httpUrl">Server URL (HTTP fallback)</label>
+      <input id="httpUrl" value="http://localhost:8080" />
+    </div>
+    <div>
+      <label for="channel">Channel</label>
+      <input id="channel" value="default" />
+    </div>
+  </div>
+
+  <div class="actions">
+    <button id="connectBtn" class="primary" onclick="toggleConnection()">Connect</button>
+    <button class="secondary" onclick="pollNow()">Poll Now</button>
+  </div>
+
+  <label>Log</label>
+  <div id="log"></div>
+
+  <div class="meta" id="meta"></div>
+  <label>Received JSON</label>
+  <div id="jsonDisplay">Waiting for data...</div>
+
+  <script>
+    let ws = null;
+    let pollTimer = null;
+    let usePolling = false;
+    const POLL_INTERVAL = 3000;
+
+    const logEl = document.getElementById('log');
+    const statusBadge = document.getElementById('statusBadge');
+    const connectBtn = document.getElementById('connectBtn');
+    const jsonDisplay = document.getElementById('jsonDisplay');
+    const metaEl = document.getElementById('meta');
+
+    function log(msg, cls = '') {
+      const ts = new Date().toLocaleTimeString();
+      const div = document.createElement('div');
+      div.className = 'log-entry ' + cls;
+      div.textContent = `[${ts}] ${msg}`;
+      logEl.appendChild(div);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function setStatus(state) {
+      if (state === 'connected') {
+        statusBadge.textContent = 'Connected via WebSocket';
+        statusBadge.className = 'status connected';
+        connectBtn.textContent = 'Disconnect';
+      } else if (state === 'polling') {
+        statusBadge.textContent = 'Polling (HTTP fallback)';
+        statusBadge.className = 'status polling';
+        connectBtn.textContent = 'Reconnect WS';
+      } else {
+        statusBadge.textContent = 'Disconnected';
+        statusBadge.className = 'status disconnected';
+        connectBtn.textContent = 'Connect';
+      }
+    }
+
+    function syntaxHighlight(json) {
+      const str = JSON.stringify(json, null, 2);
+      return str.replace(
+        /("(\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+        (match) => {
+          let cls = 'json-number';
+          if (/^"/.test(match)) {
+            cls = /:$/.test(match) ? 'json-key' : 'json-string';
+          } else if (/true|false/.test(match)) {
+            cls = 'json-bool';
+          } else if (/null/.test(match)) {
+            cls = 'json-null';
+          }
+          return `<span class="${cls}">${match}</span>`;
+        }
+      );
+    }
+
+    function displayData(channel, timestamp, data) {
+      metaEl.textContent = `Channel: ${channel} | Updated: ${new Date(timestamp).toLocaleString()}`;
+      jsonDisplay.innerHTML = syntaxHighlight(data);
+    }
+
+    function toggleConnection() {
+      stopPolling();
+      if (ws && ws.readyState <= 1) {
+        ws.close();
+        return;
+      }
+      connectWebSocket();
+    }
+
+    function connectWebSocket() {
+      const url = document.getElementById('serverUrl').value;
+      log(`Connecting to ${url}...`, 'info');
+      usePolling = false;
+      ws = new WebSocket(url);
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: 'register', role: 'viewer' }));
+      };
+
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'registered') {
+          log('Registered as viewer', 'success');
+          setStatus('connected');
+          stopPolling();
+        } else if (msg.type === 'update') {
+          log(`Received update on "${msg.channel}"`, 'success');
+          displayData(msg.channel, msg.timestamp, msg.data);
+        } else if (msg.type === 'host_disconnected') {
+          log('Host disconnected', 'warn');
+        } else if (msg.error) {
+          log(`Error: ${msg.error}`, 'error');
+        }
+      };
+
+      ws.onclose = () => {
+        log('WebSocket disconnected — falling back to HTTP polling', 'warn');
+        setStatus('polling');
+        ws = null;
+        startPolling();
+      };
+
+      ws.onerror = () => {
+        log('WebSocket error', 'error');
+      };
+    }
+
+    function startPolling() {
+      usePolling = true;
+      pollNow();
+      pollTimer = setInterval(pollNow, POLL_INTERVAL);
+      log(`Polling every ${POLL_INTERVAL / 1000}s`, 'info');
+    }
+
+    function stopPolling() {
+      usePolling = false;
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    }
+
+    function pollNow() {
+      const httpUrl = document.getElementById('httpUrl').value;
+      const channel = document.getElementById('channel').value || 'default';
+      const url = `${httpUrl}/poll/${encodeURIComponent(channel)}`;
+
+      fetch(url)
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json();
+        })
+        .then((msg) => {
+          log(`Polled "${msg.channel}" OK`, 'info');
+          displayData(msg.channel, msg.timestamp, msg.data);
+        })
+        .catch((err) => {
+          log(`Poll failed: ${err.message}`, 'error');
+        });
+    }
+  </script>
+</body>
+</html>

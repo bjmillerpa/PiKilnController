@@ -1,0 +1,24 @@
+{
+  "type": "publish",
+  "channel": "kiln",
+  "data": {
+    "temperature": 1842,
+    "targetTemperature": 2000,
+    "rampRate": 150,
+    "holdTime": 30,
+    "segment": 3,
+    "totalSegments": 5,
+    "relays": {
+      "heater1": true,
+      "heater2": true,
+      "fan": false
+    },
+    "status": "firing",
+    "elapsedMinutes": 127,
+    "schedule": "Cone 6 Glaze",
+    "sensors": [
+      { "id": "TC1", "temperatureF": 1840 },
+      { "id": "TC2", "temperatureF": 1844 }
+    ]
+  }
+}

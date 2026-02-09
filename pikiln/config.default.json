@@ -1,0 +1,25 @@
+{
+  "http": {
+    "port": 8080
+  },
+  "relay": {
+    "url": "wss://your-vps.example.com",
+    "enabled": false
+  },
+  "pid": {
+    "rings": [
+      { "p": 5, "i": 3, "d": 3 },
+      { "p": 5, "i": 3, "d": 3 },
+      { "p": 5, "i": 3, "d": 3 }
+    ]
+  },
+  "safety": {
+    "maxTempC": 1300,
+    "maxElementOnSeconds": 20,
+    "heartbeatTimeoutMs": 5000
+  },
+  "display": {
+    "units": "F"
+  },
+  "costPerKWH": 0.12
+}

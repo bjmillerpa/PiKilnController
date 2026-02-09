@@ -1,0 +1,25 @@
+# Build artifacts (Pascal/Lazarus)
+/lib/
+/backup/
+*.o
+*.ppu
+*.res
+*.compiled
+*.or
+*.obj
+link.res
+PiKilnController
+PiKilnController.exe
+PiKilnController.app/
+
+# Node.js
+node_modules/
+pikiln/data/
+
+# IDE / OS
+.DS_Store
+Thumbs.db
+*.lps
+
+# Claude Code
+.claude/

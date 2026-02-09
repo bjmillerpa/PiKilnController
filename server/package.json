@@ -1,0 +1,12 @@
+{
+  "name": "json-relay-server",
+  "version": "1.0.0",
+  "description": "WebSocket JSON relay server with HTTP polling fallback",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}

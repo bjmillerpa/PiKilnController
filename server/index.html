@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebSocket JSON Relay</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #e0e0e0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+    .container { text-align: center; max-width: 500px; }
+    h1 { font-size: 2em; margin-bottom: 8px; }
+    p { color: #888; margin-bottom: 32px; }
+    a { display: block; padding: 20px 40px; margin: 12px 0; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 1.1em; transition: transform 0.15s; }
+    a:hover { transform: translateY(-2px); }
+    .host { background: #e94560; color: #fff; }
+    .viewer { background: #0f94d2; color: #fff; }
+    .info { margin-top: 32px; font-size: 13px; color: #666; line-height: 1.6; }
+    code { background: #16213e; padding: 2px 6px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>JSON Relay Server</h1>
+    <p>WebSocket relay with HTTP polling fallback</p>
+    <a href="/host.html" class="host">Open Host Client</a>
+    <a href="/viewer.html" class="viewer">Open Viewer Client</a>
+    <div class="info">
+      <div>HTTP poll: <code>GET /poll/&lt;channel&gt;</code></div>
+      <div>Server status: <code>GET /status</code></div>
+    </div>
+  </div>
+</body>
+</html>
