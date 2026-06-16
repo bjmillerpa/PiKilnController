@@ -1,0 +1,16 @@
+{
+  "title" : "Bartlett Slow Glaze Cone 6",
+  "created" : "9/21/2022",
+  "modified" : "9/21/2022",
+  "units-rate" : "°F/hr",
+  "units-temp" : "°F",
+  "units-hold" : "min",
+  "units-fanon" : "true/false",
+  "cone" : "6",
+  "type" : "slow glaze",
+  "segments" : [
+    { "rate":150, "temp":250, "hold":0, "fanon":false, "note":"" },
+    { "rate":400, "temp":1982, "hold":0, "fanon":false, "note":"" },
+    { "rate":120, "temp":2232, "hold":0, "fanon":false, "note":"" }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "title" : "Bartlett Fast Glaze Cone 6",
+  "created" : "9/21/2022",
+  "modified" : "9/21/2022",
+  "cone" : "6",
+  "type" : "fast glaze",
+  "units-rate" : "°F/hr",
+  "units-temp" : "°F",
+  "units-hold" : "min",
+  "units-fanon" : "true/false",
+  "KWHrs per run" : "0.0",
+  "cost per run" : "0.00",
+  "time per run" : "00:00:16",
+  "last start" : "20220929_105008",
+  "last finish" : "20220929_105024",
+  "segments" : [
+    { "rate":570, "temp":1982, "hold":0, "fanon":true, "note":"" },
+    { "rate":200, "temp":2232, "hold":0, "fanon":true, "note":"" }
+  ]
+}

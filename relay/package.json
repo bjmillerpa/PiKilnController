@@ -1,0 +1,13 @@
+{
+  "name": "pikiln-relay",
+  "version": "1.0.0",
+  "description": "VPS relay bridging the Pi kiln controller to remote browsers",
+  "main": "relay-server.js",
+  "scripts": {
+    "start": "node relay-server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}

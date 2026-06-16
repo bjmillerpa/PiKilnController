@@ -1,25 +1,29 @@
-# Build artifacts (Pascal/Lazarus)
-/lib/
-/backup/
-*.o
-*.ppu
-*.res
-*.compiled
-*.or
-*.obj
-link.res
-PiKilnController
-PiKilnController.exe
-PiKilnController.app/
-
 # Node.js
 node_modules/
 pikiln/data/
 
-# IDE / OS
+# Relay secrets / local config
+relay/.env
+
+# Personal data — kept locally, never published.
+
+# Historical firing logs (mirrored from the Pi)
+firings/
+
+# Legacy local schedules dir; pikiln/seed-schedules/ is the canonical set
+schedules/
+
+# The operator's customized schedule set (relay-side canonical store)
+master-schedules/
+
+# Reference PDFs and local notes
+docs/
+
+# Editor / OS
 .DS_Store
 Thumbs.db
-*.lps
+*.swp
+*.swo
 
 # Claude Code
 .claude/

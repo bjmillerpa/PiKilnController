@@ -1,0 +1,42 @@
+[Unit]
+Description=PiKiln controller (Node.js)
+Documentation=https://github.com/bjmillerpa/PiKilnController
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+
+# Run as root because pigpio needs DMA access on the Pi. If you want to run
+# as a non-privileged user, set up pigpiod separately and adjust accordingly.
+User=root
+Group=root
+
+# Pre-start: try to fetch the latest release from the VPS relay. Always
+# exits 0 so a failed update doesn't keep the kiln from running.
+ExecStartPre=/opt/pikiln/bin/pikiln-update
+
+# Main process
+ExecStart=/opt/pikiln/bin/pikiln-launch
+
+# Restart policy. 5 restarts within 5 minutes → systemd gives up; with the
+# rollback in pikiln-update this should also cause us to revert to the
+# previous release on the next manual `systemctl start`.
+Restart=on-failure
+RestartSec=10
+StartLimitBurst=5
+StartLimitIntervalSec=300
+
+# Process hardening
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+# Stdout/stderr to the journal (journalctl -u pikiln); the app also writes
+# its own structured logs under /opt/pikiln/data/.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pikiln
+
+[Install]
+WantedBy=multi-user.target

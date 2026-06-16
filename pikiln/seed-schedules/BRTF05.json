@@ -1,0 +1,15 @@
+{
+  "title" : "Bartlett Fast Glaze Cone 05",
+  "created" : "9/21/2022",
+  "modified" : "9/21/2022",
+  "units-rate" : "°F/hr",
+  "units-temp" : "°F",
+  "units-hold" : "min",
+  "units-fanon" : "true/false",
+  "cone" : "05",
+  "type" : "fast glaze",
+  "segments" : [
+    { "rate":570, "temp":1676, "hold":0, "fanon":false, "note":"" },
+    { "rate":200, "temp":1926, "hold":0, "fanon":false, "note":"" }
+  ]
+}

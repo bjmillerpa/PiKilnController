@@ -8,6 +8,7 @@ const {
   f2c, c2f, fph2cph, cph2fph,
 } = require('./constants');
 const { ortonConeToIndex, ortonConeFromIndex, calcOrtonConeIndex } = require('./orton-cones');
+const { modelMaxFireRateCpHr, modelMaxCoolRateCpHr } = require('./thermal-model');
 
 class Schedule {
   constructor(json) {
@@ -32,11 +33,12 @@ class Schedule {
     // Parse segments, converting to internal Celsius
     const segments = data.segments || [];
     this.noSegments = segments.length;
-    this.rates = [];     // C/hr
-    this.temps = [];     // C
-    this.holdTimes = []; // minutes
-    this.fanOns = [];    // boolean
-    this.notes = [];     // string
+    this.rates = [];        // C/hr
+    this.temps = [];        // C
+    this.holdTimes = [];    // minutes (also serves as the cap when holdToCones[i] is set)
+    this.holdToCones = [];  // cone string (e.g. "6", "04") or '' for fixed-time holds
+    this.fanOns = [];       // boolean
+    this.notes = [];        // string
 
     for (const seg of segments) {
       if (isStoredInF) {
@@ -47,6 +49,7 @@ class Schedule {
         this.temps.push(seg.temp);
       }
       this.holdTimes.push(seg.hold || 0);
+      this.holdToCones.push(typeof seg.holdToCone === 'string' ? seg.holdToCone.trim() : '');
       this.fanOns.push(!!seg.fanon);
       this.notes.push(seg.note || '');
     }
@@ -61,7 +64,13 @@ class Schedule {
     this.lastTargetTempC = 0;
     this._inHold = false;
     this._holdStartTime = 0;
-    this.history = []; // [{x: hours, y: tempC}, ...]
+    // Per-ring history: this.history[i] is the time-series for ring index i,
+    // [{x: hours since start, y: tempC}, ...]. Three arrays so the firing-
+    // curve can render each ring as its own line. _actualFiringRateCpHr
+    // computes per-ring rates and averages them (was: averaged 3 consecutive
+    // mixed points, which only worked because the old single array round-
+    // robin'd between rings).
+    this.history = [[], [], []];
     this.targetConeIndex = 0;
     this.currConeIndex = 0;
     this.maxConeIndex = 0;
@@ -86,9 +95,12 @@ class Schedule {
     return false;
   }
 
-  // Core method: returns target temp in Celsius, or -1 when complete
-  // Called by kiln on each ring update with the current reported temp
-  targetTempC(reportedTempC) {
+  // Core method: returns target temp in Celsius, or -1 when complete.
+  // Called by kiln on each ring update with the current reported temp and
+  // the ring index (0..2). ringIdx is used to route the history sample to
+  // the right per-ring series. Defaults to 0 so older callers/tests that
+  // don't pass it keep working — they just see everything on ring 1's line.
+  targetTempC(reportedTempC, ringIdx = 0) {
     this.timeLeftHrs = 0;
     this.lastReportedTempC = reportedTempC;
 
@@ -115,32 +127,76 @@ class Schedule {
       this._msg(`${c2f(this.temps[0]).toFixed(0)}F @ ${cph2fph(this.rates[0]).toFixed(0)}F/hr`);
     }
 
-    // Update cone progress
+    // Current-cone display: chart interpolation against the present rate.
+    // This is the "if I held this rate forever, what cone would the kiln
+    // reach at this temperature" reading — useful as a live indicator but
+    // not what we record as the firing's max cone.
+    //
+    // `maxConeIndex` is now driven by the Arrhenius integral in kiln._doHeart-
+    // beat — it tracks accumulated time-at-temperature exposure correctly
+    // during holds and slow soaks (where the chart's rate-dependent lookup
+    // would freeze). We no longer bump it from currConeIndex here.
     this._currFiringRateCpHr = this._actualFiringRateCpHr();
     this.currConeIndex = calcOrtonConeIndex(reportedTempC, this._currFiringRateCpHr);
-    if (this.currConeIndex > this.maxConeIndex) {
-      this.maxConeIndex = this.currConeIndex;
-    }
 
     // Check for segment transition
     if (this._inHold) {
-      // Hold expired?
-      startNewSegment = (now - this._holdStartTime) >= this.holdTimes[this.currentSegment] * MS_PER_MINUTE;
+      // Hold ends when either:
+      //   (a) the fixed hold time has elapsed (`holdTimes[i]` minutes), OR
+      //   (b) a per-segment cone target has been reached via accumulated heat
+      //       work (when holdToCones[i] is set). The fixed-time check is then
+      //       the safety cap — the kiln won't soak forever if the cone never
+      //       quite tips. Whichever condition fires first wins.
+      const holdElapsedMs = now - this._holdStartTime;
+      const timeExpired = holdElapsedMs >= this.holdTimes[this.currentSegment] * MS_PER_MINUTE;
+      const coneTargetIdx = this._segmentHoldConeIdx(this.currentSegment);
+      const coneReached = coneTargetIdx > 0 && this.maxConeIndex >= coneTargetIdx;
+      if (timeExpired || coneReached) {
+        startNewSegment = true;
+        // Tell the operator which condition ended the hold and what cone we
+        // landed at — useful to know whether you got there on heat work or
+        // had to time out.
+        const heldMin = (holdElapsedMs / MS_PER_MINUTE).toFixed(1);
+        const coneStr = ortonConeFromIndex(this.maxConeIndex);
+        if (coneTargetIdx > 0 && coneReached) {
+          this._log(`hold ended: reached cone ${this.holdToCones[this.currentSegment]} after ${heldMin} min`);
+        } else if (coneTargetIdx > 0) {
+          this._log(`hold ended: max ${this.holdTimes[this.currentSegment]} min reached (target was cone ${this.holdToCones[this.currentSegment]}; current cone ${coneStr})`);
+        }
+      }
     } else {
-      // End temp reached?
-      const goingUp = this.temps[this.currentSegment] > this._startTempC;
+      // End temp reached? "Going up" is relative to THIS segment's start temp
+      // (the previous segment's end, or the schedule's captured start temp
+      // for segment 0) — not the schedule's global start. Using the global
+      // start made every segment look up-bound when starting from a cold
+      // kiln, so a programmed cool-down (e.g. 2200°F → 1500°F at -100°F/hr)
+      // would satisfy `reportedTempC ≥ 1500` on entry and immediately advance
+      // out of itself before any controlled descent could happen.
+      const segStartTempC = this.currentSegment === 0
+        ? this._startTempC
+        : this.temps[this.currentSegment - 1];
+      const goingUp = this.temps[this.currentSegment] > segStartTempC;
       const tempReached = goingUp
         ? (reportedTempC >= this.temps[this.currentSegment] || this._meetsCone())
         : (reportedTempC <= this.temps[this.currentSegment]);
 
       if (tempReached) {
-        startHold = this.holdTimes[this.currentSegment] > 0;
+        // A segment holds if it has a fixed hold time set OR specifies a
+        // cone target (which uses the holdTime as its max-duration cap).
+        const coneStr = this.holdToCones[this.currentSegment];
+        startHold = this.holdTimes[this.currentSegment] > 0 || !!coneStr;
         startNewSegment = !startHold;
         if (startHold) {
           this._inHold = true;
           this._holdStartTime = now;
-          this._log(`starting ${this.holdTimes[this.currentSegment].toFixed(0)} min hold`);
-          this._msg(`${this.holdTimes[this.currentSegment].toFixed(0)} min hold`);
+          if (coneStr) {
+            const cap = this.holdTimes[this.currentSegment];
+            this._log(`starting hold to cone ${coneStr} (max ${cap.toFixed(0)} min)`);
+            this._msg(`hold to cone ${coneStr} (max ${cap.toFixed(0)} min)`);
+          } else {
+            this._log(`starting ${this.holdTimes[this.currentSegment].toFixed(0)} min hold`);
+            this._msg(`${this.holdTimes[this.currentSegment].toFixed(0)} min hold`);
+          }
         }
       }
     }
@@ -189,30 +245,19 @@ class Schedule {
 
     this.lastTargetTempC = result;
 
-    // Calculate time remaining
-    if (this._inHold) {
-      this.timeLeftHrs = ((this._holdStartTime + this.holdTimes[this.currentSegment] * MS_PER_MINUTE) - now) / MS_PER_HOUR;
-    } else {
-      this.timeLeftHrs = (segmentLengthHrs - timeIntoSegmentHrs) + this.holdTimes[this.currentSegment] / 60;
-    }
+    // Time remaining — uses a physical model rather than just the planned
+    // schedule rate. For the current segment we use the kiln's actual recent
+    // achieved rate when it's significantly slower than what the schedule
+    // asked for (the "kiln can't keep up" case Bruce reported). For future
+    // segments we cap the schedule's planned rate at the kiln's modeled max
+    // at that temperature, so a too-aggressive ramp shows up as a more
+    // realistic time. Both effects make the displayed Time Left honest about
+    // a kiln that's already slipping behind plan.
+    this.timeLeftHrs = this._modelTimeLeftHrs(reportedTempC, now);
 
-    // Remaining segments
-    for (let i = this.currentSegment + 1; i < this.noSegments; i++) {
-      if (this.rates[i] === 0) {
-        // Estimate time at max fire rate
-        const midTemp = (this.temps[i] + this.temps[i - 1]) / 2;
-        const maxRate = this._estimatedMaxFireRate(midTemp);
-        if (maxRate > 0) {
-          this.timeLeftHrs += Math.abs((this.temps[i] - this.temps[i - 1]) / maxRate);
-        }
-      } else {
-        this.timeLeftHrs += Math.abs((this.temps[i] - this.temps[i - 1]) / this.rates[i]);
-      }
-      this.timeLeftHrs += this.holdTimes[i] / 60;
-    }
-
-    // Add to history
-    this.history.push({
+    // Add to per-ring history
+    const ringSlot = (ringIdx >= 0 && ringIdx < 3) ? ringIdx : 0;
+    this.history[ringSlot].push({
       x: (now - this._startTime) / MS_PER_HOUR,
       y: reportedTempC,
     });
@@ -224,32 +269,92 @@ class Schedule {
     return this.targetConeIndex > 0 && this.maxConeIndex >= this.targetConeIndex;
   }
 
-  _actualFiringRateCpHr() {
-    const n = this.history.length;
-    // Need ~10 minutes of history
-    const minEntries = Math.round((CYCLE_LENGTH_SECONDS / 3) * 12 * 10);
-    if (n < minEntries) return 0;
-
-    const lookback = Math.max(3, n - Math.round(RATE_LOOKBACK_SECONDS / (CYCLE_LENGTH_SECONDS / 3)));
-
-    // Average 3 points at each end so all 3 sensors are involved
-    const endY = (this.history[n - 1].y + this.history[n - 2].y + this.history[n - 3].y) / 3;
-    const endX = (this.history[n - 1].x + this.history[n - 2].x + this.history[n - 3].x) / 3;
-    const startY = (this.history[lookback - 1].y + this.history[lookback - 2].y + this.history[lookback - 3].y) / 3;
-    const startX = (this.history[lookback - 1].x + this.history[lookback - 2].x + this.history[lookback - 3].x) / 3;
-
-    const dTemp = endY - startY;
-    const dTime = endX - startX;
-    if (dTime === 0) return 0;
-
-    return dTemp / dTime; // C/hr
+  // Per-segment hold-to-cone target as a cone-index, or 0 if the segment is
+  // a plain fixed-time hold. Returns 0 for unparseable / blank strings.
+  _segmentHoldConeIdx(segIdx) {
+    const s = this.holdToCones[segIdx];
+    return s ? ortonConeToIndex(s) : 0;
   }
 
-  // Rough estimate for time-remaining calculation
-  _estimatedMaxFireRate(tempC) {
-    const heatLoss = 0.001741 * tempC * tempC + 2.184254 * tempC - 157.973796;
-    const heatCap = 140 * 545;
-    return ((48000 * 240) - Math.max(0, heatLoss)) / heatCap;
+  // Average firing rate over the last RATE_LOOKBACK_SECONDS seconds. With
+  // per-ring history each ring updates once every CYCLE_LENGTH_SECONDS (15s),
+  // so the lookback window in samples = RATE_LOOKBACK_SECONDS / 15 = 120
+  // samples per ring at the default 30 min lookback. We compute each ring's
+  // rate independently and average them — that gives the same "all-rings
+  // average" the old single-array implementation tried to achieve by
+  // averaging three consecutive mixed points, but cleaner.
+  _actualFiringRateCpHr() {
+    const lookbackSamples = Math.round(RATE_LOOKBACK_SECONDS / CYCLE_LENGTH_SECONDS);
+    const minSamples = 40; // ~10 min of per-ring data before we trust the rate
+    const rates = [];
+    for (let i = 0; i < this.history.length; i++) {
+      const h = this.history[i];
+      if (h.length < minSamples) continue;
+      const endIdx   = h.length - 1;
+      const startIdx = Math.max(0, endIdx - lookbackSamples);
+      const dT = h[endIdx].y - h[startIdx].y;
+      const dt = h[endIdx].x - h[startIdx].x;
+      if (dt > 0) rates.push(dT / dt);
+    }
+    if (rates.length === 0) return 0;
+    return rates.reduce((a, b) => a + b, 0) / rates.length;
+  }
+
+  // Pick the most credible rate to use for the *current* segment's remaining
+  // time. The schedule rate is what was asked for; the model rate is the
+  // physical ceiling at this temperature; the actual rate is what's actually
+  // happening. The effective rate is min(schedule, model), but we honor the
+  // observed slowness when the kiln has been measurably falling behind for
+  // long enough that _actualFiringRateCpHr() has data (>10 min of history).
+  _effectiveCurrentRateCpHr(reportedTempC) {
+    const segRate    = Math.abs(this.rates[this.currentSegment]);
+    const segEndC    = this.temps[this.currentSegment];
+    const goingUp    = segEndC > reportedTempC;
+    const modelMax   = goingUp
+      ? modelMaxFireRateCpHr(reportedTempC)
+      : modelMaxCoolRateCpHr(reportedTempC);
+    if (segRate === 0) return modelMax;                 // "full speed"
+    const ceiling = Math.min(segRate, modelMax);
+    // If recent actual rate is significantly below the ceiling, the kiln is
+    // slipping (cold day, weak element, etc.) — use the slip rather than the
+    // optimistic ceiling so Time Left reflects reality. 10% deadband avoids
+    // jitter from PID overshoot/undershoot during steady-rate ramps.
+    const actual = Math.abs(this._actualFiringRateCpHr());
+    if (actual > 0.1 && actual < ceiling * 0.9) return actual;
+    return ceiling;
+  }
+
+  // Total remaining time across the rest of the schedule. Current segment
+  // uses the effective rate above; future segments use the schedule rate
+  // capped by the kiln's modeled max at each segment's mid-temperature.
+  // Holds add their fixed duration. This is what `timeLeftHrs` exposes to
+  // the UI and to the firing summary.
+  _modelTimeLeftHrs(reportedTempC, now = Date.now()) {
+    let total = 0;
+    if (this._inHold) {
+      total = ((this._holdStartTime + this.holdTimes[this.currentSegment] * MS_PER_MINUTE) - now) / MS_PER_HOUR;
+    } else {
+      const segEndC = this.temps[this.currentSegment];
+      const tempRemainingC = Math.abs(segEndC - reportedTempC);
+      if (tempRemainingC > 0.5) {
+        const rate = this._effectiveCurrentRateCpHr(reportedTempC);
+        if (rate > 0.1) total = tempRemainingC / rate;
+      }
+      total += this.holdTimes[this.currentSegment] / 60;
+    }
+    for (let i = this.currentSegment + 1; i < this.noSegments; i++) {
+      const segStartC = this.temps[i - 1];
+      const segEndC   = this.temps[i];
+      const goingUp   = segEndC > segStartC;
+      const tempDelta = Math.abs(segEndC - segStartC);
+      const midC      = (segStartC + segEndC) / 2;
+      const segRate   = Math.abs(this.rates[i]);
+      const modelMax  = goingUp ? modelMaxFireRateCpHr(midC) : modelMaxCoolRateCpHr(midC);
+      const effective = segRate === 0 ? modelMax : Math.min(segRate, modelMax);
+      if (effective > 0.1) total += tempDelta / effective;
+      total += this.holdTimes[i] / 60;
+    }
+    return Math.max(0, total);
   }
 
   // Generate XY pairs for schedule preview graph
@@ -297,6 +402,8 @@ class Schedule {
         fanon: this.fanOns[i],
         note: this.notes[i],
       };
+      // Only emit holdToCone when set, so plain segments round-trip clean.
+      if (this.holdToCones[i]) seg.holdToCone = this.holdToCones[i];
       obj.segments.push(seg);
     }
     return JSON.stringify(obj, null, 2);

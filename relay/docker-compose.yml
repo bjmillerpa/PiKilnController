@@ -1,0 +1,117 @@
+services:
+  # Always-on simulator. Runs the same pikiln.js the real Pi runs, in
+  # simulation mode, and dials into the relay as a "sim" controller. When
+  # the real Pi connects, the relay supersedes the sim; when the Pi drops,
+  # the sim's reconnect logic takes over again. Lets us edit schedules and
+  # exercise the UI without powering up the Pi.
+  kiln-sim:
+    image: node:20-alpine
+    container_name: kiln-sim
+    restart: unless-stopped
+    working_dir: /app
+    # No npm install needed in sim mode — gpio-provider short-circuits before
+    # touching pigpio, so the only real dep is `ws`, which the host already has
+    # under pikiln/node_modules. We just exec node directly.
+    command: node pikiln.js
+    environment:
+      # Connect to the relay through the internal Docker network.
+      # `kiln-relay` is the service name; port 8080 is the relay's HTTP/WS port.
+      - RELAY_URL=http://kiln-relay:8080
+      - KILN_RELAY_TOKEN=${KILN_RELAY_TOKEN}
+      - KILN_RELAY_ROLE=sim
+      - PIKILN_SIMULATE=1
+      - PIKILN_DATA_DIR=/app/data
+      # Don't conflict with the relay's port (we don't actually expose the sim's
+      # HTTP UI anywhere; the UI runs via the relay's static file serving).
+      - PORT=8090
+    volumes:
+      # Read-only source bind-mount, same as the relay (single source of truth).
+      - ${KILN_PIKILN_DIR:-../pikiln}:/app:ro
+      # Read-write persistent state (schedules, logs, perf, config) on a named volume.
+      - kiln-sim-data:/app/data
+    networks:
+      - coolify
+    depends_on:
+      - kiln-relay
+
+  kiln-relay:
+    build: .
+    container_name: kiln-relay
+    restart: unless-stopped
+    # Run as the host user so writes to the bind-mounted master schedules
+    # directory land with the right ownership. The image bundles its
+    # node_modules under /app owned by uid 1000 but world-readable, so reading
+    # them as a different uid still works.
+    user: "1001:1001"
+    env_file:
+      - .env
+    volumes:
+      # Mount the whole pikiln/ tree read-only. The relay serves web/ from here,
+      # and builds the update tarball from the same source so the Pi gets exactly
+      # what we serve in the browser.
+      - ${KILN_PIKILN_DIR:-../pikiln}:/srv/pikiln:ro
+      # Master schedules directory — read-write, this is the canonical store.
+      # Both the Pi and the sim sync from here on connect; saves from any UI
+      # propagate back to this directory via schedule-update WS messages.
+      - ${KILN_MASTER_SCHEDULES_DIR:-../master-schedules}:/srv/schedules
+      # Per-firing log mirror. Pi pushes each firing's log incrementally; on
+      # catastrophic SD-card failure the VPS-side copy survives. Bind-mounted
+      # to a host directory (not a named volume) so the files are visible
+      # to other tools (rsync, backups, jq scripts) without docker exec.
+      - ${KILN_FIRINGS_DIR:-../firings}:/srv/firings
+      # htpasswd file for cookie-based browser auth. Read-only. Update it
+      # with `htpasswd /path/to/htpasswd <username>` and send SIGHUP to the
+      # relay container to pick up the new hash without a restart.
+      - ${KILN_HTPASSWD_FILE}:/etc/pikiln-htpasswd:ro
+    environment:
+      - WEB_DIR=/srv/pikiln/web
+      - UPDATE_SRC_DIR=/srv/pikiln
+      - MASTER_SCHEDULES_DIR=/srv/schedules
+      - FIRINGS_DIR=/srv/firings
+      - HTPASSWD_FILE=/etc/pikiln-htpasswd
+      # Pushover — keys come from the .env file (already in env_file: above).
+      # Explicitly listed here so they're visible in compose docs.
+      - PUSHOVER_USER=${PUSHOVER_USER:-}
+      - PUSHOVER_INFO=${PUSHOVER_INFO:-}
+      - PUSHOVER_WARN=${PUSHOVER_WARN:-}
+      - PUSHOVER_ERROR=${PUSHOVER_ERROR:-}
+    networks:
+      - coolify
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=coolify
+
+      # Shared HTTP→HTTPS redirect (Coolify defines this elsewhere too; safe to repeat)
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true
+
+      # Auth moved into the relay — see lib/htpasswd.js + lib/session.js.
+      # The relay reads the htpasswd file directly and issues a long-lived
+      # signed cookie (HMAC over a key derived from KILN_RELAY_TOKEN). This
+      # fixes iOS Safari's habit of dropping basic-auth credentials on every
+      # WebSocket reconnect.
+
+      # ── HTTP → HTTPS ──
+      - traefik.http.routers.kiln-http.rule=Host(`${KILN_HOST}`)
+      - traefik.http.routers.kiln-http.entrypoints=http
+      - traefik.http.routers.kiln-http.middlewares=redirect-to-https
+      - traefik.http.routers.kiln-http.service=kiln-relay
+
+      # Single HTTPS router for the whole host — no middleware. Auth happens
+      # in the relay (which knows which paths bypass: /health, /login, /controller,
+      # /update/*).
+      - traefik.http.routers.kiln-https.rule=Host(`${KILN_HOST}`)
+      - traefik.http.routers.kiln-https.entrypoints=https
+      - traefik.http.routers.kiln-https.tls=true
+      - traefik.http.routers.kiln-https.tls.certresolver=letsencrypt
+      - traefik.http.routers.kiln-https.service=kiln-relay
+
+      # Backend port
+      - traefik.http.services.kiln-relay.loadbalancer.server.port=8080
+
+networks:
+  coolify:
+    external: true
+
+volumes:
+  kiln-sim-data:

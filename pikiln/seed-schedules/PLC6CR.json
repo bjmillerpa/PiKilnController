@@ -1,0 +1,18 @@
+{
+  "title" : "Cone 6 Crystal Glaze Plainsman",
+  "created" : "9/25/2022",
+  "modified" : "9/25/2022",
+  "units-rate" : "°F/hr",
+  "units-temp" : "°F",
+  "units-hold" : "min",
+  "units-fanon" : "true/false",
+  "cone" : "-",
+  "type" : "-",
+  "segments" : [
+    { "rate":136, "temp":701,  "hold":0, "fanon":"true", "note":"" },
+    { "rate":716, "temp":1999, "hold":0, "fanon":"true", "note":"" },
+    { "rate":117, "temp":2210, "hold":0, "fanon":"true", "note":"" },
+    { "rate":716, "temp":1999, "hold":0, "fanon":"true", "note":"" },
+    { "rate":716, "temp":1898, "hold":0, "fanon":"true", "note":"" }
+  ]
+}

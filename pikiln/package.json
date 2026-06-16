@@ -5,7 +5,8 @@
   "main": "pikiln.js",
   "scripts": {
     "start": "node pikiln.js",
-    "sim": "PIKILN_SIMULATE=1 node pikiln.js"
+    "sim": "PIKILN_SIMULATE=1 node pikiln.js",
+    "test": "node --test --test-force-exit test/*.test.js"
   },
   "dependencies": {
     "ws": "^8.16.0"

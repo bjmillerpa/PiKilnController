@@ -1,0 +1,17 @@
+{
+  "title" : "Preheat 2 Hour",
+  "created" : "9/20/2022",
+  "modified" : "9/20/2022",
+  "units-rate" : "°F/hr",
+  "units-temp" : "°F",
+  "units-hold" : "min",
+  "units-fanon" : "true/false",
+  "cone" : "-",
+  "type" : "preheat",
+  "time per run" : "00:00:31",
+  "last start" : "20220921_073709",
+  "last finish" : "20220921_073740",
+  "segments" : [
+    { "rate":200, "temp":200, "hold":120, "fanon":false, "note":"" }
+  ]
+}

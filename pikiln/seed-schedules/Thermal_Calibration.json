@@ -1,0 +1,15 @@
+{
+  "title": "Thermal Calibration",
+  "cone": "-",
+  "type": "calibration",
+  "units-rate": "°F/hr",
+  "units-temp": "°F",
+  "units-hold": "min",
+  "units-fanon": "true/false",
+  "notes": "Three hold anchors at 300/500/700°C plus a free cool-down to ambient. Run twice (empty + 50 kg load), identical schedule both times. Set Settings → Kiln load before each run; set fan mode to off. Feeds scripts/analyze-thermal.js — gives 3 fresh hold anchors per run and continuous cool-down dT/dt from 700°C to ambient. ~25-30 kWh per run.",
+  "segments": [
+    { "rate": 250, "temp": 572,  "hold": 30, "fanon": false, "note": "300°C anchor" },
+    { "rate": 250, "temp": 932,  "hold": 30, "fanon": false, "note": "500°C anchor" },
+    { "rate": 250, "temp": 1292, "hold": 30, "fanon": false, "note": "700°C peak, then free cool-down to ambient" }
+  ]
+}

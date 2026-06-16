@@ -1,0 +1,13 @@
+{
+"title":"PID Training w/ fan on",
+"cone":"-",
+"type":"-",
+"segments":[
+  { "rate":100, "temp":200, "hold":30, "fanon":true, "note":"" },
+  { "rate":100, "temp":250, "hold":30, "fanon":true, "note":"" },
+  { "rate":100, "temp":200, "hold":30, "fanon":true, "note":"" },
+  { "rate":100, "temp":250, "hold":30, "fanon":true, "note":"" },
+  { "rate":100, "temp":200, "hold":30, "fanon":true, "note":"" },
+  { "rate":100, "temp":250, "hold":30, "fanon":true, "note":"" }
+ ]
+}

@@ -1,0 +1,18 @@
+{
+  "title" : "PID Test",
+  "created" : "9/21/2022",
+  "modified" : "9/21/2022",
+  "units-rate" : "°F/hr",
+  "units-temp" : "°F",
+  "units-hold" : "min",
+  "units-fanon" : "true/false",
+  "cone" : "-",
+  "type" : "-",
+  "segments" : [
+    { "rate":600, "temp":200, "hold":5, "fanon":false, "note":"" },
+    { "rate":200, "temp":300, "hold":0, "fanon":false, "note":"" },
+    { "rate":1000, "temp":1000, "hold":0, "fanon":false, "note":"" },
+    { "rate":2000, "temp":2000, "hold":0, "fanon":false, "note":"" },
+    { "rate":200, "temp":1000, "hold":0, "fanon":false, "note":"" }
+  ]
+}

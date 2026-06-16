@@ -1,0 +1,8 @@
+{
+"title":"Preheat Overnight",
+"cone":"-",
+"type":"preheat",
+"segments":[
+  { "rate":200, "temp":200, "hold":600, "fanon":true, "note":"" }
+ ]
+}

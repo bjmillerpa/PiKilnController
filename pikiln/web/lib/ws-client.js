@@ -10,7 +10,13 @@ export class WsClient extends EventTarget {
   get connected() { return this._connected; }
 
   connect(url) {
-    this._url = url || `ws://${location.host}`;
+    // Match the page's protocol: an HTTPS page can't open a ws:// — the
+    // browser blocks mixed-content WebSockets silently, and the UI sits
+    // there showing "Disconnected" with no error. Use wss:// when we're
+    // served over HTTPS (from the relay), ws:// for plain
+    // HTTP (the Pi's LAN UI at localhost:8080).
+    const proto = (typeof location !== 'undefined' && location.protocol === 'https:') ? 'wss:' : 'ws:';
+    this._url = url || `${proto}//${location.host}`;
     this._doConnect();
   }
 

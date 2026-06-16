@@ -3,8 +3,8 @@
     "port": 8080
   },
   "relay": {
-    "url": "wss://your-vps.example.com",
-    "enabled": false
+    "url": "",
+    "token": ""
   },
   "pid": {
     "rings": [
@@ -15,11 +15,20 @@
   },
   "safety": {
     "maxTempC": 1300,
-    "maxElementOnSeconds": 20,
+    "maxElementOnSeconds": 30,
     "heartbeatTimeoutMs": 5000
+  },
+  "logs": {
+    "retentionDays": 60
+  },
+  "balance": {
+    "maxRingSpreadF": 15,
+    "endSpreadF": 3,
+    "endWithinF": 25
   },
   "display": {
     "units": "F"
   },
-  "costPerKWH": 0.12
+  "costPerKWH": 0.12,
+  "loadKg": 0
 }

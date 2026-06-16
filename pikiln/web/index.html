@@ -28,11 +28,12 @@
     }
     .conn-status.on { background: #16213e; color: #0f0; border: 1px solid #0f0; }
     .conn-status.off { background: #16213e; color: #f44; border: 1px solid #f44; }
+    .conn-status.warn { background: #16213e; color: #ffaa00; border: 1px solid #ffaa00; }
 
-    /* Simulation banner */
-    .sim-banner {
-      background: #553300;
-      color: #ffaa00;
+    /* Simulation / cooling / hold banners */
+    .sim-banner,
+    .cooling-banner,
+    .hold-banner {
       padding: 6px 14px;
       border-radius: 6px;
       margin-bottom: 12px;
@@ -40,6 +41,22 @@
       font-size: 13px;
       text-align: center;
     }
+    .sim-banner     { background: #553300; color: #ffaa00; }
+    .cooling-banner { background: #1a3a5a; color: #6cb6ff; }
+    .hold-banner    { background: #3a3a1a; color: #e9d860; }
+
+    /* Recovery banner — larger, attention-grabbing, has its own actions */
+    .recovery-banner {
+      background: #4a1a1a;
+      border: 2px solid #e94560;
+      color: #ffcccc;
+      padding: 14px 16px;
+      border-radius: 8px;
+      margin-bottom: 14px;
+    }
+    .recovery-banner-title  { font-weight: 700; font-size: 15px; margin-bottom: 6px; }
+    .recovery-banner-detail { font-size: 13px; margin-bottom: 10px; line-height: 1.4; }
+    .recovery-banner-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
     /* Temperature rings */
     .temps { display: flex; gap: 12px; margin-bottom: 16px; }
@@ -52,10 +69,17 @@
       text-align: center;
       transition: border-color 0.3s;
     }
+    .temp-ring.faulted { background: #2a1f0c; }
+    .temp-ring.faulted:not(.on) { border-color: #d4a017; }
+    .temp-ring.faulted .value { color: #888; }
+    /* .on comes after .faulted so the red firing border wins when both apply —
+       Bruce needs to see at a glance that an element is firing even on a
+       faulted ring (fault-fallback can still drive it via a sibling sensor). */
     .temp-ring.on { border-color: #e94560; box-shadow: 0 0 12px rgba(233,69,96,0.3); }
     .temp-ring .label { font-size: 11px; color: #888; text-transform: uppercase; }
     .temp-ring .value { font-size: 2em; font-weight: 700; margin: 4px 0; }
     .element-indicator { font-size: 11px; color: #e94560; font-weight: 600; min-height: 16px; }
+    .fault-indicator { font-size: 11px; color: #d4a017; font-weight: 600; min-height: 16px; }
 
     /* Info grid */
     .info-grid {
@@ -186,6 +210,93 @@
     }
     .edit-actions { display: flex; gap: 8px; margin-top: 8px; }
 
+    /* Tabs */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 14px;
+      border-bottom: 2px solid #2a2a4e;
+    }
+    .tab {
+      padding: 9px 18px;
+      background: transparent;
+      color: #888;
+      border: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .tab:hover { color: #ccc; }
+    .tab-active { color: #e94560; border-bottom-color: #e94560; }
+
+    /* Status chips (LIVE / SIM) */
+    .role-chip {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    .role-real { background: #1a5a2a; color: #5fe66f; border: 1px solid #2a8040; }
+    .role-sim  { background: #553300; color: #ffaa00; border: 1px solid #886600; }
+
+    /* Schedules tab */
+    .schedule-list { list-style: none; padding: 0; margin: 0; max-height: 320px; overflow-y: auto; }
+    .schedule-list li { margin: 0; }
+    .schedule-list-item {
+      width: 100%;
+      text-align: left;
+      padding: 6px 10px;
+      background: transparent;
+      color: #ccc;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+      margin-bottom: 2px;
+    }
+    .schedule-list-item:hover { background: #1a2a4e; color: #fff; }
+    .schedule-list-item.active { background: #1a2a4e; color: #e94560; border-color: #e94560; }
+    .dirty-flag { color: #ffaa00; font-size: 11px; margin-left: 8px; font-weight: normal; }
+    .muted { color: #666; }
+    .small { font-size: 11px; }
+    .error { color: #f44; font-size: 12px; padding: 6px 0; }
+    .warn-banner {
+      background: #553300;
+      color: #ffaa00;
+      padding: 6px 14px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      font-weight: 600;
+      font-size: 13px;
+      text-align: center;
+    }
+
+    /* Tests tab */
+    .test-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .test-cell {
+      background: #0f0f23;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 14px;
+      text-align: center;
+    }
+    .test-cell-label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+    .test-cell-state { font-size: 1.6em; font-weight: 700; margin: 8px 0; }
+    .test-cell-state.on  { color: #e94560; }
+    .test-cell-state.off { color: #555; }
+    .test-cell-meta { margin-top: 6px; }
+    .test-cell button { width: 100%; }
+
     /* Log */
     .log-container {
       background: #0f0f23;
@@ -199,10 +310,61 @@
       white-space: pre-wrap;
     }
     .log-entry { margin-bottom: 1px; line-height: 1.4; }
+
+    /* Help tab — rendered markdown styling */
+    .md-rendered { line-height: 1.6; color: #e0e0e0; }
+    .md-rendered h1, .md-rendered h2, .md-rendered h3,
+    .md-rendered h4, .md-rendered h5, .md-rendered h6 {
+      color: #e94560; margin-top: 1.2em; margin-bottom: 0.5em;
+    }
+    .md-rendered h1 { font-size: 1.5em; border-bottom: 1px solid #333; padding-bottom: 6px; }
+    .md-rendered h2 { font-size: 1.25em; }
+    .md-rendered h3 { font-size: 1.1em; color: #f0a020; }
+    .md-rendered p  { margin-bottom: 0.8em; }
+    .md-rendered ul, .md-rendered ol { margin: 0 0 0.8em 1.5em; }
+    .md-rendered li { margin-bottom: 0.3em; }
+    .md-rendered code {
+      background: #0f0f23; padding: 1px 5px; border-radius: 3px;
+      font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+      font-size: 0.9em; color: #aef;
+    }
+    .md-rendered pre {
+      background: #0f0f23; border: 1px solid #333; border-radius: 6px;
+      padding: 10px; margin: 0.5em 0 1em; overflow-x: auto;
+      font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+      font-size: 12px; line-height: 1.45;
+    }
+    .md-rendered pre code { background: none; padding: 0; color: #e0e0e0; }
+    .md-rendered a { color: #20d0a0; text-decoration: none; }
+    .md-rendered a:hover { text-decoration: underline; }
+    .md-rendered strong { color: #fff; }
+    .md-rendered blockquote {
+      border-left: 3px solid #444; padding: 4px 12px;
+      color: #aaa; margin: 0.5em 0; font-style: italic;
+    }
+    .md-rendered table { border-collapse: collapse; margin: 0.5em 0 1em; }
+    .md-rendered th, .md-rendered td {
+      border: 1px solid #333; padding: 4px 10px; text-align: left;
+    }
+    .md-rendered th { background: #16213e; color: #e94560; }
+    .help-doc-link:hover { background: #16213e; }
   </style>
 </head>
 <body>
   <div id="app"></div>
-  <script type="module" src="app.js"></script>
+  <!-- Absolute paths so the same index.html works when served from /
+       (normal operator UI) and from /monitor/<key> (read-only share). The
+       browser resolves relative paths against the current URL, which would
+       map "app.js" to "/monitor/<key>/app.js" and 404. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "preact": "/lib/vendor/preact.mjs",
+      "preact/hooks": "/lib/vendor/preact-hooks.mjs",
+      "htm": "/lib/vendor/htm.mjs"
+    }
+  }
+  </script>
+  <script type="module" src="/app.js"></script>
 </body>
 </html>

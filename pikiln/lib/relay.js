@@ -53,6 +53,16 @@ class Relay {
       this._lastAccumulationTime = now;
     }
   }
+
+  // Reset cumulative on-time. Called at kiln.start() so kWh / "Power" /
+  // firing summary reflect this firing only, not the lifetime total since
+  // the service started. If the relay is currently on we restart the
+  // accumulation clock from now (rather than dropping the in-flight on-time).
+  resetSecondsOn() {
+    this.secondsOn = 0;
+    this._secondsOnLastChecked = 0;
+    this._lastAccumulationTime = this.isOn ? Date.now() : 0;
+  }
 }
 
 class Element extends Relay {
@@ -77,6 +87,14 @@ class Element extends Relay {
     }
 
     this.turnOn();
+    // Reset the continuous-on counter on every control-loop intervention.
+    // Without this, back-to-back full-duty firings stack up across cycle
+    // boundaries (the 1.2× overlap keeps the relay closed, so turnOn() above
+    // is a no-op for state and `_continuousOnStart` would otherwise stick at
+    // the first turn-on time). The safety net we want is "element is firing
+    // but the control loop hasn't touched it" — each successful start() call
+    // IS the loop touching it.
+    this._continuousOnStart = Date.now();
     this._offTimer = setTimeout(() => {
       this._offTimer = null;
       this.turnOff();

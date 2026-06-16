@@ -1,0 +1,28 @@
+{
+  "docs": [
+    {
+      "slug": "architecture",
+      "title": "Architecture",
+      "file": "architecture.md",
+      "summary": "Three-process model — Pi, VPS relay, browser — and the data that flows between them"
+    },
+    {
+      "slug": "setup",
+      "title": "Setup from scratch",
+      "file": "setup.md",
+      "summary": "Hardware list, VPS install, Pi flash and install, first-firing walkthrough, build checklist"
+    },
+    {
+      "slug": "pi-commands",
+      "title": "Pi commands",
+      "file": "pi-commands.md",
+      "summary": "Common shell commands for managing the controller on the Raspberry Pi"
+    },
+    {
+      "slug": "thermal-analysis",
+      "title": "Thermal-loss analysis",
+      "file": "thermal-analysis.md",
+      "summary": "Offline analyzer that learns your kiln's heat-loss curve and thermal mass from a firing log"
+    }
+  ]
+}
