@@ -1,6 +1,18 @@
 {
   "docs": [
     {
+      "slug": "ui-guide",
+      "title": "Operator UI guide",
+      "file": "ui-guide.md",
+      "summary": "Every tab walkthrough — dashboard, controls, settings, log, schedules editor, tests, monitor share link"
+    },
+    {
+      "slug": "schedules",
+      "title": "Schedules",
+      "file": "schedules.md",
+      "summary": "Schedule format, segments, hold-to-cone, editor, master/working-copy sync, common gotchas"
+    },
+    {
       "slug": "architecture",
       "title": "Architecture",
       "file": "architecture.md",

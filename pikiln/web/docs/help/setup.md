@@ -19,8 +19,8 @@ the steps, skip ahead.
 - **3 × low-power relay modules** — solid-state or mechanical, 3.3 V control,
   rated for the contactor coil current (usually <500 mA at 12 V or 24 V)
 - **3 × high-power contactors** — mechanical, normally-open, rated above
-  the element current (240 V × 16 A = 3.84 kW per element on Bruce's L&L;
-  check yours). One per heating zone.
+  the element current (240 V × 16 A = 3.84 kW per element on a typical
+  L&L Easy-Fire; check yours). One per heating zone.
 - **1 × low-power relay for the vent fan**
 - **24 V DC power supply** for the contactor coils (or whatever voltage your
   contactors want)

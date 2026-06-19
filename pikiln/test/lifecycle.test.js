@@ -728,6 +728,83 @@ test('_currentMaxTempC: returns -Infinity when all sensors faulted', () => {
   assert.equal(Number.isFinite(k._currentMaxTempC()), false);
 });
 
+test('apparent load: back-calculates kiln m·c from synthesized window data', () => {
+  // The apparent-load math reads {t, T, jCum} from the rolling buffer and
+  // solves m·c = (P_in − Q_loss(T)) / (dT/dt). Verify it lands close to a
+  // known synthetic m·c when we inject a plausible window of data — bypassing
+  // the actual heartbeat (which would take 2 minutes of wall clock to fill
+  // the min window). The kiln object is otherwise stock.
+  const { heatLossW } = require('../lib/thermal-model');
+  const k = makeKilnWithSchedule([{ rate: 200, temp: 1000, hold: 0 }]);
+  k.start();
+
+  // Synthesize a 3-minute window: kiln ramps 300°C → 320°C (~400°C/hr), at a
+  // temp where heat loss is well within the polynomial fit. Inject the
+  // energy that a kiln with m·c=104,670 J/K (76,300 brick + 31.5 kg load)
+  // would have absorbed.
+  const mcTrue = 104670;
+  const T0 = 300, T1 = 320;
+  const windowS = 180;
+  const T_mid = (T0 + T1) / 2;
+  const heatAbsorbedJ = mcTrue * (T1 - T0);
+  const heatLostJ     = heatLossW(T_mid) * windowS;
+  const energyInJ     = heatAbsorbedJ + heatLostJ;
+  const now = Date.now();
+
+  k._apparentBuf = [
+    { t: now - windowS * 1000, T: T0, jCum: 0 },
+    { t: now,                  T: T1, jCum: energyInJ },
+  ];
+
+  // Run the math by re-invoking _sampleApparentLoad with synthetic next-beat
+  // values. The sampler appends a new entry — we pre-position the buffer so
+  // its endpoints are the synthetic window, and inject a no-op final sample
+  // by setting kiln state appropriately. Simpler: call the inner math by
+  // monkey-patching the sensors + power for one tick.
+  for (const s of k.tempSensors) s._seedForTest({ tempC: T1 });
+  // Spoof elapsedPowerKWHr by stubbing the elements' on-time so the kWh
+  // getter returns our target. Element watts × secondsOn = energyInJ, three
+  // elements split the energy equally for simplicity.
+  const eachWattS = energyInJ / 3;
+  for (const e of k.elements) {
+    e.secondsOn = eachWattS / e.watts;
+  }
+  k._sampleApparentLoad();
+
+  const al = k._apparentLoad;
+  assert.ok(al, 'expected apparent-load estimate');
+  // Tolerance: 10% — the inner sample pushes a new entry, so the actual window
+  // is slightly different from the synthetic one; what matters is that the
+  // estimate lands in the right ballpark.
+  const err = Math.abs(al.mcJK - mcTrue) / mcTrue;
+  assert.ok(err < 0.10,
+    `apparent m·c off by ${(err * 100).toFixed(1)}%: got ${al.mcJK}, expected ~${mcTrue}`);
+  // And the kg derivation should be in the load ballpark
+  assert.ok(Math.abs(al.kg - 31.5) < 10,
+    `apparent load kg off: got ${al.kg}, expected ~31.5`);
+  k.stop();
+});
+
+test('apparent load: returns null (or stale) during a hold', () => {
+  // When the kiln is essentially not moving (|dT/dt| < threshold), the
+  // back-calculation degenerates — skip rather than publish nonsense.
+  const k = makeKilnWithSchedule([{ rate: 200, temp: 500, hold: 30 }]);
+  k.start();
+  const now = Date.now();
+  // Window where the kiln barely moves (10°C/hr is well below the 30°C/hr
+  // threshold)
+  k._apparentBuf = [
+    { t: now - 180000, T: 500, jCum: 0 },
+    { t: now,          T: 500.5, jCum: 100000 },
+  ];
+  for (const s of k.tempSensors) s._seedForTest({ tempC: 500.5 });
+  // The sampler doesn't have a prior valid estimate to mark stale, so on a
+  // hold-only sample sequence we expect _apparentLoad to remain null.
+  k._sampleApparentLoad();
+  assert.equal(k._apparentLoad, null);
+  k.stop();
+});
+
 test('progress thresholds: 200°F-step crossings fire one event each', () => {
   const k = makeKilnWithSchedule([{ rate: 600, temp: 1500, hold: 0 }]);
   setKilnTempC(k, 20);

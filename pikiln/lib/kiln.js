@@ -69,6 +69,15 @@ class Kiln extends EventEmitter {
     // 0 (empty) so a fresh install with no setting acts like the bare kiln.
     this._loadKg = Math.max(0, Math.min(100, Number(config?.loadKg) || 0));
     thermalModel.setLoadKg(this._loadKg);
+
+    // Apparent-load tracking. Rolling buffer of {t, T_avg, joulesCumulative}
+    // samples used to back-calculate the kiln's effective heat capacity from
+    // live data: m·c = (P_in − Q_loss(T)) / (dT/dt). Useful as a sanity check
+    // against the operator-set load — an empty kiln should read ~76,300 J/K,
+    // a loaded one shows the load contribution on top. Resets on each
+    // kiln.start() so a firing's estimate isn't biased by prior runs.
+    this._apparentBuf = [];           // [{t, T, jCum}], one entry per heartbeat
+    this._apparentLoad = null;        // most recent valid estimate, or null
     // Per-ring Arrhenius integral H = ∫ exp(-Ea/RT) dt. Drives the cone-
     // progress reading (schedule.maxConeIndex) via coneIndexFromH(). Reset
     // on each kiln.start() so a fresh firing starts with zero accumulated
@@ -200,6 +209,8 @@ class Kiln extends EventEmitter {
     this._coolingStartTime = null;
     this._peakTempC = -Infinity;
     this._arrheniusH = [0, 0, 0];
+    this._apparentBuf = [];
+    this._apparentLoad = null;
     // Reset per-element on-time so power/kWh stats reflect THIS firing only.
     // Without this, the firing summary's Energy field shows lifetime watt-
     // hours since the Pi booted — accurate as a meter reading but useless
@@ -672,8 +683,102 @@ class Kiln extends EventEmitter {
     // mode, so the dashboard shows live temps when the kiln is off and chip
     // faults surface within the 3-sample debounce window.
 
+    // Sample apparent-load data while a firing (or its cool-down) is active.
+    // Off / idle: no point, kiln isn't doing anything. Holds are accepted —
+    // the compute step itself rejects samples where the kiln isn't moving.
+    if (this.mode === 'running' || this.mode === 'cooling') {
+      this._sampleApparentLoad();
+    }
+
     this._lastTime = Date.now();
     this.emit('heartbeat', this.getStatus());
+  }
+
+  // Record one (time, mean-temp, cumulative-joules) sample and refresh the
+  // apparent-load estimate from the rolling window. Bounded to APPARENT_WINDOW_S
+  // of history (most recent samples; older entries shift off the front).
+  _sampleApparentLoad() {
+    const APPARENT_WINDOW_S      = 300;  // 5-minute rolling window
+    const APPARENT_MIN_WINDOW_S  = 120;  // need at least 2 minutes before estimating
+    const APPARENT_MIN_DTDT_CPHR = 30;   // skip samples where the kiln is essentially holding
+    const T_AMB_C                = 21;
+
+    // Mean ring temperature, dropping faulted sensors. Without a usable temp
+    // we can't compute heat loss; skip this beat entirely.
+    const ts = this.tempSensors
+      .map(s => s.lastReadingC)
+      .filter(t => Number.isFinite(t) && t > 0);
+    if (ts.length === 0) return;
+    const T = ts.reduce((a, b) => a + b, 0) / ts.length;
+
+    // Cumulative joules delivered since firing start. elapsedPowerKWHr resets
+    // on each kiln.start(), so the diff over our window is exactly the energy
+    // input during it — no separate accumulator needed.
+    const jCum = this.elapsedPowerKWHr * 3600 * 1000;
+    const now = Date.now();
+    this._apparentBuf.push({ t: now, T, jCum });
+
+    // Trim the front of the buffer down to APPARENT_WINDOW_S of history.
+    const cutoff = now - APPARENT_WINDOW_S * 1000;
+    while (this._apparentBuf.length > 2 && this._apparentBuf[0].t < cutoff) {
+      this._apparentBuf.shift();
+    }
+
+    // Need a settled window before we can trust the estimate.
+    const first = this._apparentBuf[0];
+    const last  = this._apparentBuf[this._apparentBuf.length - 1];
+    const windowSec = (last.t - first.t) / 1000;
+    if (windowSec < APPARENT_MIN_WINDOW_S) { this._apparentLoad = null; return; }
+
+    const dTdtCpHr = (last.T - first.T) / windowSec * 3600;
+    if (Math.abs(dTdtCpHr) < APPARENT_MIN_DTDT_CPHR) {
+      // Hold (or close to it). Keep the last valid estimate displayed so the
+      // UI doesn't flicker, but flag it as stale — the operator sees that
+      // it's pinned because we're not currently moving.
+      if (this._apparentLoad) this._apparentLoad = { ...this._apparentLoad, stale: true };
+      return;
+    }
+
+    // Average power input over the window
+    const energyJ = last.jCum - first.jCum;
+    const powerInW = energyJ / windowSec;
+
+    // Heat loss at the window's mean temperature (avoids large extrapolation
+    // when the kiln moved 50°C+ during the window)
+    const T_mid = (first.T + last.T) / 2;
+    const lossW = thermalModel.heatLossW(T_mid);
+
+    // m·c = net heating power / dT/dt (both in same time units)
+    const netW = powerInW - lossW;
+    const dTdtCps = dTdtCpHr / 3600;
+    const mcJK = netW / dTdtCps;
+
+    // Sanity guard: reject implausible values rather than show garbage.
+    // The kiln's *brick* alone is ~76,300 J/K — anything well below that is
+    // measurement noise (one sensor flickering, transient overshoot, etc.).
+    // 500,000 J/K corresponds to a load of ~470 kg, far above the kiln's
+    // physical capacity.
+    if (!Number.isFinite(mcJK) || mcJK < 30000 || mcJK > 500000) {
+      if (this._apparentLoad) this._apparentLoad = { ...this._apparentLoad, stale: true };
+      return;
+    }
+
+    // Net should agree in sign with dT/dt: positive net power → heating;
+    // negative → losing more than putting in. If they disagree the kiln is
+    // doing something the model can't reconcile (sensor drift, off-curve
+    // operation). Don't publish.
+    if (Math.sign(netW) !== Math.sign(dTdtCps)) {
+      if (this._apparentLoad) this._apparentLoad = { ...this._apparentLoad, stale: true };
+      return;
+    }
+
+    const apparentLoadKg = Math.max(0, (mcJK - 76300) / 900);
+    this._apparentLoad = {
+      mcJK: Math.round(mcJK),
+      kg: Math.round(apparentLoadKg * 10) / 10,
+      updatedAt: now,
+      stale: false,
+    };
   }
 
   // Try preferred ring's sensor, fall back to others on error
@@ -818,6 +923,11 @@ class Kiln extends EventEmitter {
       // resulting m·c (for operator intuition about how much the load matters).
       loadKg: this._loadKg,
       heatCapJK: thermalModel.getHeatCapJK(),
+      // Live back-calculated heat capacity (J/K) and implied ceramic load
+      // (kg) derived from observed power input, temp rate, and the model's
+      // Q_loss(T) curve. null while we don't have enough recent data
+      // (firing just started, or kiln hasn't moved enough during a hold).
+      apparentLoad: this._apparentLoad,
       elapsedSeconds: this.elapsedTimeSeconds,
       temps: this.tempSensors.map(s => s.lastReadingC),
       // Per-ring sensor fault state. `null` means healthy; a string code

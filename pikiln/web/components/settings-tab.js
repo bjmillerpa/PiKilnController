@@ -97,6 +97,36 @@ function LoadKgSlider({ state, ws }) {
         Effective m·c: <strong>${heatCapJK.toLocaleString()} J/K</strong>
         <span style="opacity:0.6">(76,300 brick + ${localKg} × 900 ceramic)</span>
       </div>
+      <${ApparentLoadBadge} state=${state} />
+    </div>
+  `;
+}
+
+// Live-derived heat capacity, back-calculated from observed power input +
+// temp rate against the calibrated Q_loss(T) curve. Updates each heartbeat
+// during a running firing or cool-down. Hidden until the buffer has settled
+// enough samples (~2 min). Useful for the operator to sanity-check the
+// load setting above — an empty kiln should converge to ~76,300 J/K /
+// 0 kg, a loaded kiln to the operator's slider value (within ±10 kg or so
+// depending on how much of the load equilibrated with the brick).
+function ApparentLoadBadge({ state }) {
+  const al = state?.apparentLoad;
+  if (!al) {
+    return html`
+      <div class="muted small" style="text-align:right; font-style:italic; opacity:0.6">
+        Apparent m·c: gathering data… (needs 2 min of movement; idle/holds skipped)
+      </div>
+    `;
+  }
+  const fresh = !al.stale;
+  const ageS  = al.updatedAt ? Math.max(0, Math.round((Date.now() - al.updatedAt) / 1000)) : null;
+  const ageLabel = !fresh && ageS != null
+    ? ` · paused ${ageS < 90 ? `${ageS}s` : `${Math.round(ageS / 60)}m`} ago`
+    : '';
+  return html`
+    <div class="muted small" style="text-align:right; opacity:${fresh ? 1 : 0.65}">
+      Apparent m·c: <strong>${al.mcJK.toLocaleString()} J/K</strong>
+      → load ≈ <strong>${al.kg.toFixed(1)} kg</strong>${ageLabel}
     </div>
   `;
 }

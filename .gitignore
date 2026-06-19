@@ -7,17 +7,19 @@ relay/.env
 
 # Personal data — kept locally, never published.
 
-# Historical firing logs (mirrored from the Pi)
-firings/
+# Historical firing logs (mirrored from the Pi).
+# Anchored to the repo root so this doesn't also exclude
+# `pikiln/web/docs/help/schedules.md` etc.
+/firings/
 
 # Legacy local schedules dir; pikiln/seed-schedules/ is the canonical set
-schedules/
+/schedules/
 
 # The operator's customized schedule set (relay-side canonical store)
-master-schedules/
+/master-schedules/
 
 # Reference PDFs and local notes
-docs/
+/docs/
 
 # Editor / OS
 .DS_Store
